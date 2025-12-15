@@ -2,89 +2,109 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>二十四节气 - 滑动切换版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>二十四节气风景窗 - 完整版</title>
     <style>
+        /* --- 基础样式 --- */
         body { margin: 0; overflow: hidden; background: #000; font-family: 'KaiTi', '楷体', serif; user-select: none; }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
         
-        /* UI 层 */
+        /* --- UI 层布局 --- */
         #ui-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2;
             pointer-events: none; display: flex; flex-direction: column;
             justify-content: center; align-items: center;
         }
 
-        /* 状态指示器 */
+        /* 状态提示胶囊 */
         #gesture-status {
             position: absolute; top: 15%;
-            font-size: 18px; color: rgba(255,255,255,0.6);
-            background: rgba(0,0,0,0.4); padding: 8px 16px; border-radius: 20px;
-            letter-spacing: 2px; transition: all 0.2s;
+            font-size: 16px; color: rgba(255,255,255,0.7);
+            background: rgba(0,0,0,0.4); padding: 8px 20px; border-radius: 30px;
+            letter-spacing: 1.5px; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 1px solid rgba(255,255,255,0.1);
         }
-        /* 触发动作时的视觉反馈 */
+        /* 激活时的视觉反馈 */
         #gesture-status.active { 
-            color: #fff; background: rgba(46, 139, 87, 0.8); 
-            transform: scale(1.1);
+            color: #fff; background: rgba(46, 139, 87, 0.9); 
+            transform: scale(1.1); border-color: rgba(255,255,255,0.5);
         }
 
-        /* 轮盘 */
+        /* 时间轮盘 */
         #wheel-container {
-            width: 320px; height: 320px; 
-            border: 2px dashed rgba(255,255,255,0.15); 
+            width: 340px; height: 340px; 
+            border: 1px dashed rgba(255,255,255,0.2); 
             border-radius: 50%; position: absolute;
             display: flex; justify-content: center; align-items: center;
-            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* 弹性动画 */
+            transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1); /* 平滑回弹动画 */
+        }
+        /* 轮盘装饰圈 */
+        #wheel-inner {
+            width: 300px; height: 300px; border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.05);
+            position: absolute;
         }
         
+        /* 指针 */
         #wheel-pointer {
-            width: 16px; height: 16px; background: #fff; border-radius: 50%;
-            position: absolute; top: -8px; box-shadow: 0 0 15px #fff; z-index: 5;
+            width: 12px; height: 12px; background: #fff; border-radius: 50%;
+            position: absolute; top: -6px; box-shadow: 0 0 15px #fff; z-index: 5;
         }
 
-        /* 节气文字 */
-        #term-info { text-align: center; transition: opacity 0.5s; opacity: 0; transform: translateY(20px); }
+        /* 节气文字与诗词 */
+        #term-info { text-align: center; transition: opacity 0.6s ease; opacity: 0; transform: translateY(20px); }
         #term-info.visible { opacity: 1; transform: translateY(0); }
-        #term-title { font-size: 5rem; color: #fff; text-shadow: 0 4px 15px rgba(0,0,0,0.6); margin: 0; }
+        #term-title { font-size: 5rem; color: #fff; text-shadow: 0 5px 20px rgba(0,0,0,0.5); margin: 0; letter-spacing: 5px; }
         #poem-text {
-            font-size: 1.6rem; color: rgba(255,255,255,0.95); margin-top: 15px;
-            background: rgba(0,0,0,0.3); padding: 10px 30px; border-radius: 50px;
-            backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1);
+            font-size: 1.5rem; color: rgba(255,255,255,0.9); margin-top: 20px;
+            background: rgba(255,255,255,0.1); padding: 12px 35px; border-radius: 50px;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.15);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
 
         /* 启动遮罩 */
         #overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9); z-index: 100;
+            background: #111; z-index: 100;
             display: flex; justify-content: center; align-items: center; flex-direction: column;
-            color: white; cursor: pointer; pointer-events: auto;
+            color: white; cursor: pointer; pointer-events: auto; transition: opacity 0.5s;
         }
+        #overlay h1 { font-size: 24px; margin-bottom: 10px; font-weight: normal; }
+        #overlay p { font-size: 14px; opacity: 0.5; }
         
-        /* 摄像头 (右上角) */
+        /* 摄像头 (右上角布局) */
         #webcam { 
-            position: absolute; top: 20px; right: 20px; width: 180px; 
-            opacity: 0.6; z-index: 3; border-radius: 12px;
-            transform: scaleX(-1); /* 镜像翻转：这对坐标判定很重要 */
-            border: 2px solid rgba(255,255,255,0.1);
+            position: absolute; top: 20px; right: 20px; width: 160px; 
+            opacity: 0.5; z-index: 3; border-radius: 12px;
+            transform: scaleX(-1); /* 镜像翻转 */
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: opacity 0.3s;
         }
+        #webcam:hover { opacity: 1; }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <h1 id="status-text">正在初始化引擎...</h1>
-    <p id="sub-text">请稍候 (加载 AI 模型中)</p>
+    <h1 id="status-text">系统初始化中...</h1>
+    <p id="sub-text">正在加载 AI 视觉模型</p>
 </div>
 
 <video id="webcam" autoplay playsinline></video>
+
 <div id="canvas-container"></div>
 
 <div id="ui-layer">
     <div id="gesture-status">伸出食指 · 左右挥动切换</div>
+    
     <div id="term-info" class="visible">
-        <h1 id="term-title">惊蛰</h1>
-        <div id="poem-text">微雨众卉新，一雷惊蛰始</div>
+        <h1 id="term-title">立春</h1>
+        <div id="poem-text">阳和起蛰，品物皆春</div>
     </div>
+    
     <div id="wheel-container">
+        <div id="wheel-inner"></div>
         <div id="wheel-pointer"></div>
     </div>
 </div>
@@ -104,64 +124,171 @@
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
-    // --- 数据 ---
+    // --- 1. 完整数据源 (24节气) ---
     const SOLAR_TERMS = [
+        // 春 (Spring)
+        { name: "立春", color: 0x98FB98, poem: "阳和起蛰，品物皆春", type: "petals", fallbackGeo: "cone" },
+        { name: "雨水", color: 0x87CEFA, poem: "随风潜入夜，润物细无声", type: "rain", fallbackGeo: "sphere" },
         { name: "惊蛰", color: 0x2E8B57, poem: "微雨众卉新，一雷惊蛰始", type: "rain", fallbackGeo: "cone" },
         { name: "春分", color: 0xFFB6C1, poem: "春风如贵客，一到便繁华", type: "petals", fallbackGeo: "sphere" },
+        { name: "清明", color: 0xADD8E6, poem: "清明时节雨纷纷，路上行人欲断魂", type: "rain", fallbackGeo: "box" },
+        { name: "谷雨", color: 0x32CD32, poem: "杨花落尽子规啼，闻道龙标过五溪", type: "rain", fallbackGeo: "cone" },
+
+        // 夏 (Summer)
         { name: "立夏", color: 0xFF7F50, poem: "绿树阴浓夏日长，楼台倒影入池塘", type: "clear", fallbackGeo: "box" },
-        { name: "大雪", color: 0xAEC6CF, poem: "柴门闻犬吠，风雪夜归人", type: "snow", fallbackGeo: "sphere" },
-        // ... 您可以继续添加更多节气
+        { name: "小满", color: 0xFFA500, poem: "夜莺啼绿柳，皓月醒长空", type: "clear", fallbackGeo: "sphere" },
+        { name: "芒种", color: 0xFFD700, poem: "家家麦饭美，处处菱歌长", type: "clear", fallbackGeo: "cone" },
+        { name: "夏至", color: 0xFF4500, poem: "东边日出西边雨，道是无晴却有晴", type: "rain", fallbackGeo: "sphere" },
+        { name: "小暑", color: 0xFF8C00, poem: "荷风送香气，竹露滴清响", type: "clear", fallbackGeo: "box" },
+        { name: "大暑", color: 0xB22222, poem: "赤日几时过，清风无处寻", type: "clear", fallbackGeo: "cone" },
+
+        // 秋 (Autumn)
+        { name: "立秋", color: 0xDAA520, poem: "空山新雨后，天气晚来秋", type: "clear", fallbackGeo: "box" },
+        { name: "处暑", color: 0xCD853F, poem: "离离原上草，一岁一枯荣", type: "clear", fallbackGeo: "sphere" },
+        { name: "白露", color: 0xF0E68C, poem: "露从今夜白，月是故乡明", type: "clear", fallbackGeo: "cone" },
+        { name: "秋分", color: 0xD2691E, poem: "自古逢秋悲寂寥，我言秋日胜春朝", type: "petals", fallbackGeo: "sphere" }, // 落叶
+        { name: "寒露", color: 0xA0522D, poem: "萧疏桐叶上，月白露初团", type: "clear", fallbackGeo: "box" },
+        { name: "霜降", color: 0x708090, poem: "停车坐爱枫林晚，霜叶红于二月花", type: "petals", fallbackGeo: "cone" }, // 落叶
+
+        // 冬 (Winter)
+        { name: "立冬", color: 0x778899, poem: "北风往复几寒凉，疏木摇空半绿黄", type: "clear", fallbackGeo: "box" },
+        { name: "小雪", color: 0xB0C4DE, poem: "晚来天欲雪，能饮一杯无", type: "snow", fallbackGeo: "sphere" },
+        { name: "大雪", color: 0xE0FFFF, poem: "柴门闻犬吠，风雪夜归人", type: "snow", fallbackGeo: "cone" },
+        { name: "冬至", color: 0xF0F8FF, poem: "天时人事日相催，冬至阳生春又来", type: "snow", fallbackGeo: "sphere" },
+        { name: "小寒", color: 0xF5F5F5, poem: "小寒连大吕，欢鹊垒新巢", type: "snow", fallbackGeo: "box" },
+        { name: "大寒", color: 0xFFFAFA, poem: "旧雪未及消，新雪又拥户", type: "snow", fallbackGeo: "cone" }
     ];
 
+    // --- 2. 状态管理 ---
     const state = {
         currentTermIndex: 0,
-        lastX: null,            // 上一帧食指的 X 坐标
-        lastSwitchTime: 0,      // 上次切换的时间 (用于冷却)
-        wheelRotation: 0        // 轮盘当前的旋转角度
+        lastX: null,            // 手势X坐标
+        lastSwitchTime: 0,      // 冷却计时器
+        wheelRotation: 0,       // 轮盘角度
+        audioEnabled: false
     };
 
-    // --- Three.js 场景 setup (保持不变) ---
+    // --- 3. Three.js 场景构建 ---
     const container = document.getElementById('canvas-container');
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x000000, 0.03);
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 100);
-    camera.position.set(0, 2, 6);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2, 7);
+
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.8));
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100), new THREE.MeshStandardMaterial({color:0x111111, roughness:0.8}));
-    ground.rotation.x = -Math.PI/2; scene.add(ground);
 
-    // --- 场景与物体更新 ---
-    let particleSystem, currentModel;
+    // 灯光
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    scene.add(hemiLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(5, 10, 7);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    // 地面
+    const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(100, 100),
+        new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8, metalness: 0.2 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    // --- 4. 场景元素管理 (模型与粒子) ---
+    let particleSystem = null;
+    let currentModel = null;
+    const gltfLoader = new GLTFLoader();
     const targetBgColor = new THREE.Color(SOLAR_TERMS[0].color);
 
     function updateScene(term) {
-        if(particleSystem) { scene.remove(particleSystem); particleSystem = null; }
-        if(term.type !== 'clear') {
+        // 4.1 更新粒子
+        if (particleSystem) {
+            scene.remove(particleSystem);
+            particleSystem.geometry.dispose();
+            particleSystem = null;
+        }
+
+        if (term.type !== 'clear') {
+            const count = 1500;
             const geo = new THREE.BufferGeometry();
             const pos = [];
-            for(let i=0; i<1000; i++) pos.push((Math.random()-0.5)*30, Math.random()*20, (Math.random()-0.5)*30);
+            
+            for (let i = 0; i < count; i++) {
+                pos.push((Math.random() - 0.5) * 40); // x
+                pos.push(Math.random() * 20);         // y
+                pos.push((Math.random() - 0.5) * 30); // z
+            }
             geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-            const mat = new THREE.PointsMaterial({color: 0xffffff, size: 0.2, transparent: true, opacity: 0.6});
+
+            // 粒子颜色逻辑 (秋天是金叶，春天是粉花，冬夏是白)
+            let pColor = 0xffffff;
+            if (term.type === 'petals') {
+                // 判断是否为秋季节气
+                const autumnTerms = ["立秋", "处暑", "白露", "秋分", "寒露", "霜降"];
+                if (autumnTerms.includes(term.name)) {
+                    pColor = 0xFFD700; // 金色落叶
+                } else {
+                    pColor = 0xFFB6C1; // 粉色花瓣
+                }
+            }
+
+            // 简单的圆形纹理
+            const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#FFF';
+            if (term.type === 'rain') ctx.fillRect(14, 0, 4, 32);
+            else { ctx.beginPath(); ctx.arc(16, 16, 10, 0, Math.PI * 2); ctx.fill(); }
+            
+            const tex = new THREE.CanvasTexture(canvas);
+
+            const mat = new THREE.PointsMaterial({
+                color: pColor,
+                size: term.type === 'rain' ? 0.3 : 0.2,
+                map: tex,
+                transparent: true,
+                opacity: 0.7,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+
             particleSystem = new THREE.Points(geo, mat);
+            particleSystem.userData = { type: term.type }; // 存储类型用于动画
             scene.add(particleSystem);
         }
-        if(currentModel) scene.remove(currentModel);
-        const geo = term.fallbackGeo === 'cone' ? new THREE.ConeGeometry(1,3,32) : new THREE.SphereGeometry(1.5,32,32);
-        currentModel = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color: term.color, roughness: 0.4}));
+
+        // 4.2 更新中心模型 (备用几何体逻辑)
+        if (currentModel) scene.remove(currentModel);
+        
+        // 此处可扩展：if (term.modelUrl) gltfLoader.load(...) else ...
+        let geometry;
+        if (term.fallbackGeo === 'cone') geometry = new THREE.ConeGeometry(1, 3, 6);
+        else if (term.fallbackGeo === 'sphere') geometry = new THREE.IcosahedronGeometry(1.5, 0);
+        else geometry = new THREE.BoxGeometry(2, 2, 2);
+
+        const material = new THREE.MeshStandardMaterial({ 
+            color: term.color, 
+            roughness: 0.3,
+            emissive: term.color,
+            emissiveIntensity: 0.1
+        });
+        
+        currentModel = new THREE.Mesh(geometry, material);
         currentModel.position.y = 1.5;
         scene.add(currentModel);
+
+        // 4.3 背景色目标
         targetBgColor.setHex(term.color);
     }
 
-    // --- 核心：滑动逻辑更新 ---
+    // --- 5. 核心逻辑：切换节气 ---
     function switchTerm(direction) {
-        // direction: 1 (Next/Left Swipe), -1 (Prev/Right Swipe)
+        // direction: 1 (Next), -1 (Prev)
         let newIndex = state.currentTermIndex + direction;
         
-        // 循环边界处理
+        // 循环数组
         if (newIndex >= SOLAR_TERMS.length) newIndex = 0;
         if (newIndex < 0) newIndex = SOLAR_TERMS.length - 1;
 
@@ -169,46 +296,59 @@
             state.currentTermIndex = newIndex;
             const data = SOLAR_TERMS[newIndex];
 
-            // 1. UI 更新
+            // UI 动画更新
             const title = document.getElementById('term-title');
             const poem = document.getElementById('poem-text');
-            title.style.opacity = 0; poem.style.opacity = 0;
+            const infoBox = document.getElementById('term-info');
+            
+            infoBox.classList.remove('visible'); // 先隐藏
+            
             setTimeout(() => {
                 title.innerText = data.name;
                 poem.innerText = data.poem;
-                title.style.opacity = 1; poem.style.opacity = 1;
+                infoBox.classList.add('visible'); // 再显示
                 updateScene(data);
-            }, 200);
+            }, 400);
 
-            // 2. 轮盘旋转动画 (每次转 360/24 = 15度，这里演示转 45度)
-            state.wheelRotation += direction * 45; 
+            // 轮盘旋转 (24格，每格 360/24 = 15度)
+            state.wheelRotation += direction * 15; 
             document.getElementById('wheel-container').style.transform = `rotate(${state.wheelRotation}deg)`;
 
-            // 3. 状态提示
+            // 状态提示
             const statusUI = document.getElementById('gesture-status');
-            statusUI.innerText = direction > 0 ? ">>> 下一个节气" : "<<< 上一个节气";
+            statusUI.innerText = direction > 0 ? ">>> 进入下一节气" : "<<< 返回上一节气";
             statusUI.classList.add('active');
-            setTimeout(() => statusUI.classList.remove('active'), 800);
+            setTimeout(() => {
+                statusUI.classList.remove('active');
+                statusUI.innerText = "伸出食指 · 左右挥动切换"; // 复原提示
+            }, 1000);
         }
     }
 
-    // --- 视觉识别与手势判定 ---
+    // --- 6. AI 视觉引擎 (MediaPipe) ---
     let handLandmarker = null;
+    
     async function initVision() {
-        const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+        const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+        );
         handLandmarker = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`, delegate: "GPU" },
-            runningMode: "VIDEO", numHands: 1
+            baseOptions: {
+                modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                delegate: "GPU"
+            },
+            runningMode: "VIDEO",
+            numHands: 1
         });
+
         const video = document.getElementById("webcam");
-        navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
-            video.srcObject = stream;
-            video.addEventListener("loadeddata", predict);
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        video.addEventListener("loadeddata", predictLoop);
     }
 
     let lastVideoTime = -1;
-    function predict() {
+    function predictLoop() {
         const video = document.getElementById("webcam");
         if (lastVideoTime !== video.currentTime && handLandmarker) {
             lastVideoTime = video.currentTime;
@@ -216,90 +356,101 @@
             
             if (results.landmarks.length > 0) {
                 const lm = results.landmarks[0];
-                const indexFingerTip = lm[8]; // 食指指尖
-                const currentX = indexFingerTip.x;
-
-                // 当前时间
+                const indexTip = lm[8]; // 食指指尖
+                const currentX = indexTip.x;
                 const now = Date.now();
 
-                // 只有当距离上次切换超过 500ms 时才检测 (冷却时间)
+                // 冷却时间检查 (500ms)
                 if (now - state.lastSwitchTime > 500) {
-                    
                     if (state.lastX !== null) {
-                        // 计算位移差
                         const deltaX = currentX - state.lastX;
-                        
-                        // 阈值设定：0.03 (约占屏幕宽度的3%)
-                        // 需要一定速度才能触发，防止静止时的微抖动
-                        const SWIPE_THRESHOLD = 0.04; 
-
-                        if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
-                            // --- 方向判定 (重要) ---
-                            // 视频是 scaleX(-1) 镜像的。
-                            // MediaPipe 原始数据: 0(左) -> 1(右)
-                            // 
-                            // 1. 用户向左挥手 (Physically Left)
-                            //    镜像画面显示手向右移动 (Visual Right)
-                            //    MediaPipe X 值变大 (deltaX > 0)
-                            //    动作：切换到"下一个"
-                            
+                        // 阈值检测 (0.04)
+                        if (Math.abs(deltaX) > 0.04) {
+                            // 注意：画面是镜像的 (scaleX-1)，所以逻辑要反转
+                            // 视觉上向左挥手 = 实际上手指向右移 (X变大) = Next
                             if (deltaX > 0) {
-                                // 实际：向左挥手 -> 下一个
-                                switchTerm(1);
+                                switchTerm(1); // Next
                             } else {
-                                // 实际：向右挥手 -> 上一个 (切回)
-                                switchTerm(-1);
+                                switchTerm(-1); // Prev
                             }
-
-                            // 记录切换时间，进入冷却
                             state.lastSwitchTime = now;
                         }
                     }
+                    state.lastX = currentX;
                 }
-                
-                // 更新上一帧位置
-                state.lastX = currentX;
-
             } else {
-                // 手消失时重置
-                state.lastX = null;
+                state.lastX = null; // 手消失重置
             }
         }
-        requestAnimationFrame(predict);
+        requestAnimationFrame(predictLoop);
     }
 
-    // --- 动画循环 ---
+    // --- 7. 渲染与动画循环 ---
     function animate() {
         requestAnimationFrame(animate);
+
+        // 背景颜色渐变
         scene.background = scene.background || new THREE.Color();
-        scene.background.lerp(targetBgColor, 0.05);
+        scene.background.lerp(targetBgColor, 0.03);
         scene.fog.color.copy(scene.background);
+
+        // 粒子动画
         if (particleSystem) {
             const positions = particleSystem.geometry.attributes.position.array;
-            for(let i=1; i<positions.length; i+=3) {
-                positions[i] -= 0.1;
-                if(positions[i] < -10) positions[i] = 10;
+            const type = particleSystem.userData.type;
+            
+            for (let i = 1; i < positions.length; i += 3) {
+                // 下落速度
+                positions[i] -= (type === 'rain' ? 0.4 : 0.1); 
+                
+                // 循环边界
+                if (positions[i] < -10) {
+                    positions[i] = 20;
+                }
             }
             particleSystem.geometry.attributes.position.needsUpdate = true;
+            
+            // 整体旋转 (风的效果)
+            particleSystem.rotation.y += 0.002;
         }
-        if(currentModel) currentModel.rotation.y += 0.005; // 待机自转
+
+        // 模型自转
+        if (currentModel) {
+            currentModel.rotation.y += 0.005;
+            currentModel.rotation.x = Math.sin(Date.now() * 0.001) * 0.1;
+        }
+
         renderer.render(scene, camera);
     }
 
-    // --- 启动 ---
+    // --- 8. 启动流程 ---
     const overlay = document.getElementById('overlay');
+    const statusText = document.getElementById('status-text');
+    const subText = document.getElementById('sub-text');
+
     initVision().then(() => {
-        document.getElementById('status-text').innerText = "点击开启";
+        statusText.innerText = "点击屏幕开启体验";
+        subText.innerText = "系统就绪 · 请确保摄像头权限已开启";
+        
         overlay.addEventListener('click', () => {
-            overlay.remove();
+            overlay.style.opacity = 0;
+            setTimeout(() => overlay.remove(), 500);
+            
+            // 初始化第一个节气
             updateScene(SOLAR_TERMS[0]);
             animate();
         });
+        
         overlay.style.cursor = "pointer";
+    }).catch(err => {
+        statusText.innerText = "初始化失败";
+        subText.innerText = "请检查网络 (CDN) 或摄像头权限";
+        console.error(err);
     });
 
+    // 窗口自适应
     window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth/window.innerHeight;
+        camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
