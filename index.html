@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>二十四节气 - 交互优化版</title>
+    <title>二十四节气 - 滑动切换版</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'KaiTi', '楷体', serif; user-select: none; }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
@@ -14,33 +14,31 @@
             justify-content: center; align-items: center;
         }
 
-        /* 状态指示器 (辅助用户了解当前是否捏合成功) */
+        /* 状态指示器 */
         #gesture-status {
-            position: absolute; top: 20%;
-            font-size: 14px; color: rgba(255,255,255,0.5);
-            letter-spacing: 2px; transition: color 0.3s;
+            position: absolute; top: 15%;
+            font-size: 18px; color: rgba(255,255,255,0.6);
+            background: rgba(0,0,0,0.4); padding: 8px 16px; border-radius: 20px;
+            letter-spacing: 2px; transition: all 0.2s;
         }
-        #gesture-status.active { color: #00FF7F; font-weight: bold; text-shadow: 0 0 10px #00FF7F; }
+        /* 触发动作时的视觉反馈 */
+        #gesture-status.active { 
+            color: #fff; background: rgba(46, 139, 87, 0.8); 
+            transform: scale(1.1);
+        }
 
-        /* 增强的时间轮盘 */
+        /* 轮盘 */
         #wheel-container {
             width: 320px; height: 320px; 
-            border: 2px dashed rgba(255,255,255,0.15); /* 虚线更有刻度感 */
+            border: 2px dashed rgba(255,255,255,0.15); 
             border-radius: 50%; position: absolute;
             display: flex; justify-content: center; align-items: center;
-            transition: border-color 0.2s, box-shadow 0.2s, transform 0.1s; /* 移除 transform 的缓动，改用 JS 控制 */
-        }
-        /* 激活状态 */
-        #wheel-container.active {
-            border: 2px solid rgba(255, 255, 255, 0.9);
-            box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
-            background: rgba(255, 255, 255, 0.02);
+            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* 弹性动画 */
         }
         
         #wheel-pointer {
             width: 16px; height: 16px; background: #fff; border-radius: 50%;
-            position: absolute; top: -8px; box-shadow: 0 0 15px #fff;
-            z-index: 5;
+            position: absolute; top: -8px; box-shadow: 0 0 15px #fff; z-index: 5;
         }
 
         /* 节气文字 */
@@ -61,16 +59,11 @@
             color: white; cursor: pointer; pointer-events: auto;
         }
         
-        /* --- 优化 1: 摄像头置于右上角 --- */
+        /* 摄像头 (右上角) */
         #webcam { 
-            position: absolute; 
-            top: 20px;       /* 顶部 */
-            right: 20px;     /* 右侧 */
-            width: 180px; 
-            opacity: 0.6;    /* 稍微提高不透明度以便观察手势 */
-            z-index: 3; 
-            transform: scaleX(-1); /* 镜像翻转 */
-            border-radius: 12px;
+            position: absolute; top: 20px; right: 20px; width: 180px; 
+            opacity: 0.6; z-index: 3; border-radius: 12px;
+            transform: scaleX(-1); /* 镜像翻转：这对坐标判定很重要 */
             border: 2px solid rgba(255,255,255,0.1);
         }
     </style>
@@ -86,7 +79,7 @@
 <div id="canvas-container"></div>
 
 <div id="ui-layer">
-    <div id="gesture-status">请捏合手指以旋转</div>
+    <div id="gesture-status">伸出食指 · 左右挥动切换</div>
     <div id="term-info" class="visible">
         <h1 id="term-title">惊蛰</h1>
         <div id="poem-text">微雨众卉新，一雷惊蛰始</div>
@@ -111,22 +104,23 @@
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
-    // --- 配置数据 ---
+    // --- 数据 ---
     const SOLAR_TERMS = [
         { name: "惊蛰", color: 0x2E8B57, poem: "微雨众卉新，一雷惊蛰始", type: "rain", fallbackGeo: "cone" },
         { name: "春分", color: 0xFFB6C1, poem: "春风如贵客，一到便繁华", type: "petals", fallbackGeo: "sphere" },
         { name: "立夏", color: 0xFF7F50, poem: "绿树阴浓夏日长，楼台倒影入池塘", type: "clear", fallbackGeo: "box" },
-        { name: "大雪", color: 0xAEC6CF, poem: "柴门闻犬吠，风雪夜归人", type: "snow", fallbackGeo: "sphere" }
+        { name: "大雪", color: 0xAEC6CF, poem: "柴门闻犬吠，风雪夜归人", type: "snow", fallbackGeo: "sphere" },
+        // ... 您可以继续添加更多节气
     ];
 
     const state = {
         currentTermIndex: 0,
-        isPinching: false,  // 是否处于捏合状态
-        wheelAngle: 0,      // 轮盘当前的实际角度 (累积)
-        lastHandAngle: null // 上一帧手的角度
+        lastX: null,            // 上一帧食指的 X 坐标
+        lastSwitchTime: 0,      // 上次切换的时间 (用于冷却)
+        wheelRotation: 0        // 轮盘当前的旋转角度
     };
 
-    // --- Three.js 基础场景 (保持不变) ---
+    // --- Three.js 场景 setup (保持不变) ---
     const container = document.getElementById('canvas-container');
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x000000, 0.03);
@@ -139,11 +133,11 @@
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100), new THREE.MeshStandardMaterial({color:0x111111, roughness:0.8}));
     ground.rotation.x = -Math.PI/2; scene.add(ground);
 
-    // --- 简单的粒子与模型逻辑 (简化版用于演示) ---
-    let particleSystem;
-    let currentModel;
+    // --- 场景与物体更新 ---
+    let particleSystem, currentModel;
+    const targetBgColor = new THREE.Color(SOLAR_TERMS[0].color);
+
     function updateScene(term) {
-        // 1. 粒子
         if(particleSystem) { scene.remove(particleSystem); particleSystem = null; }
         if(term.type !== 'clear') {
             const geo = new THREE.BufferGeometry();
@@ -154,41 +148,52 @@
             particleSystem = new THREE.Points(geo, mat);
             scene.add(particleSystem);
         }
-        // 2. 模型
         if(currentModel) scene.remove(currentModel);
         const geo = term.fallbackGeo === 'cone' ? new THREE.ConeGeometry(1,3,32) : new THREE.SphereGeometry(1.5,32,32);
         currentModel = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color: term.color, roughness: 0.4}));
         currentModel.position.y = 1.5;
         scene.add(currentModel);
-        
-        // 3. 背景
         targetBgColor.setHex(term.color);
     }
-    const targetBgColor = new THREE.Color(SOLAR_TERMS[0].color);
 
-    // --- UI 更新逻辑 ---
-    function updateUI(index) {
-        if(index === state.currentTermIndex) return;
-        state.currentTermIndex = index;
-        const data = SOLAR_TERMS[index];
+    // --- 核心：滑动逻辑更新 ---
+    function switchTerm(direction) {
+        // direction: 1 (Next/Left Swipe), -1 (Prev/Right Swipe)
+        let newIndex = state.currentTermIndex + direction;
         
-        // 只有当数据改变时才刷新 DOM
-        const title = document.getElementById('term-title');
-        const poem = document.getElementById('poem-text');
-        
-        // 简单的淡入淡出
-        title.style.opacity = 0; poem.style.opacity = 0;
-        setTimeout(() => {
-            title.innerText = data.name;
-            poem.innerText = data.poem;
-            title.style.opacity = 1; poem.style.opacity = 1;
-            updateScene(data);
-        }, 200);
+        // 循环边界处理
+        if (newIndex >= SOLAR_TERMS.length) newIndex = 0;
+        if (newIndex < 0) newIndex = SOLAR_TERMS.length - 1;
+
+        if (newIndex !== state.currentTermIndex) {
+            state.currentTermIndex = newIndex;
+            const data = SOLAR_TERMS[newIndex];
+
+            // 1. UI 更新
+            const title = document.getElementById('term-title');
+            const poem = document.getElementById('poem-text');
+            title.style.opacity = 0; poem.style.opacity = 0;
+            setTimeout(() => {
+                title.innerText = data.name;
+                poem.innerText = data.poem;
+                title.style.opacity = 1; poem.style.opacity = 1;
+                updateScene(data);
+            }, 200);
+
+            // 2. 轮盘旋转动画 (每次转 360/24 = 15度，这里演示转 45度)
+            state.wheelRotation += direction * 45; 
+            document.getElementById('wheel-container').style.transform = `rotate(${state.wheelRotation}deg)`;
+
+            // 3. 状态提示
+            const statusUI = document.getElementById('gesture-status');
+            statusUI.innerText = direction > 0 ? ">>> 下一个节气" : "<<< 上一个节气";
+            statusUI.classList.add('active');
+            setTimeout(() => statusUI.classList.remove('active'), 800);
+        }
     }
 
-    // --- 核心：手势识别与控制优化 ---
+    // --- 视觉识别与手势判定 ---
     let handLandmarker = null;
-
     async function initVision() {
         const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
         handLandmarker = await HandLandmarker.createFromOptions(vision, {
@@ -202,19 +207,6 @@
         });
     }
 
-    // 计算两点距离
-    function getDistance(p1, p2) {
-        return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-    }
-
-    // 计算最短旋转路径 (解决 359度 -> 1度 的反转问题)
-    function shortestAngleDist(a, b) {
-        let diff = b - a;
-        while (diff > Math.PI) diff -= 2 * Math.PI;
-        while (diff < -Math.PI) diff += 2 * Math.PI;
-        return diff;
-    }
-
     let lastVideoTime = -1;
     function predict() {
         const video = document.getElementById("webcam");
@@ -222,71 +214,56 @@
             lastVideoTime = video.currentTime;
             const results = handLandmarker.detectForVideo(video, performance.now());
             
-            const wheelUI = document.getElementById('wheel-container');
-            const statusUI = document.getElementById('gesture-status');
-
             if (results.landmarks.length > 0) {
                 const lm = results.landmarks[0];
-                const thumb = lm[4];
-                const index = lm[8];
-                
-                // 1. 判断是否捏合 (离合器逻辑)
-                // 距离阈值通常在 0.05 - 0.1 之间，根据实际调试设定
-                const pinchDist = getDistance(thumb, index);
-                const isPinching = pinchDist < 0.08; 
+                const indexFingerTip = lm[8]; // 食指指尖
+                const currentX = indexFingerTip.x;
 
-                if (isPinching) {
-                    // --- 捏合状态：控制旋转 ---
-                    state.isPinching = true;
-                    wheelUI.classList.add('active');
-                    statusUI.innerText = "已吸附 - 转动控制";
-                    statusUI.classList.add('active');
+                // 当前时间
+                const now = Date.now();
 
-                    // 计算当前手的角度
-                    const currentHandAngle = Math.atan2(thumb.y - index.y, thumb.x - index.x);
-
-                    if (state.lastHandAngle !== null) {
-                        // 计算角度差 (Delta)，并累加到轮盘角度
-                        // 使用 shortestAngleDist 防止从 -PI 跳到 PI 时的剧烈抖动
-                        const delta = shortestAngleDist(state.lastHandAngle, currentHandAngle);
-                        
-                        // 灵敏度系数 (1.5倍数意味着手转90度，轮盘转135度，减少手腕负担)
-                        const sensitivity = 1.5;
-                        state.wheelAngle += delta * sensitivity;
-                    }
+                // 只有当距离上次切换超过 500ms 时才检测 (冷却时间)
+                if (now - state.lastSwitchTime > 500) {
                     
-                    state.lastHandAngle = currentHandAngle;
+                    if (state.lastX !== null) {
+                        // 计算位移差
+                        const deltaX = currentX - state.lastX;
+                        
+                        // 阈值设定：0.03 (约占屏幕宽度的3%)
+                        // 需要一定速度才能触发，防止静止时的微抖动
+                        const SWIPE_THRESHOLD = 0.04; 
 
-                } else {
-                    // --- 松开状态：停止控制 ---
-                    state.isPinching = false;
-                    state.lastHandAngle = null; // 重置上一帧角度
-                    wheelUI.classList.remove('active');
-                    statusUI.innerText = "请捏合手指以旋转";
-                    statusUI.classList.remove('active');
+                        if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
+                            // --- 方向判定 (重要) ---
+                            // 视频是 scaleX(-1) 镜像的。
+                            // MediaPipe 原始数据: 0(左) -> 1(右)
+                            // 
+                            // 1. 用户向左挥手 (Physically Left)
+                            //    镜像画面显示手向右移动 (Visual Right)
+                            //    MediaPipe X 值变大 (deltaX > 0)
+                            //    动作：切换到"下一个"
+                            
+                            if (deltaX > 0) {
+                                // 实际：向左挥手 -> 下一个
+                                switchTerm(1);
+                            } else {
+                                // 实际：向右挥手 -> 上一个 (切回)
+                                switchTerm(-1);
+                            }
+
+                            // 记录切换时间，进入冷却
+                            state.lastSwitchTime = now;
+                        }
+                    }
                 }
+                
+                // 更新上一帧位置
+                state.lastX = currentX;
 
             } else {
-                state.isPinching = false;
-                state.lastHandAngle = null;
-                wheelUI.classList.remove('active');
+                // 手消失时重置
+                state.lastX = null;
             }
-
-            // --- 2. 视觉同步与节气映射 ---
-            // 规范化角度到 0 - 1 之间 (0 = 0度, 1 = 360度)
-            // 将累积的角度取模，保证一直在圆圈内
-            let normalizedRotation = (state.wheelAngle % (Math.PI * 2)) / (Math.PI * 2);
-            if (normalizedRotation < 0) normalizedRotation += 1; // 处理负数
-
-            // 映射到数组索引
-            const totalTerms = SOLAR_TERMS.length;
-            const termIndex = Math.floor(normalizedRotation * totalTerms);
-            updateUI(termIndex);
-
-            // 更新 UI 轮盘的 CSS 旋转
-            // 直接使用 state.wheelAngle 可以保证多圈旋转时不回弹
-            const deg = state.wheelAngle * (180 / Math.PI);
-            wheelUI.style.transform = `rotate(${deg}deg)`;
         }
         requestAnimationFrame(predict);
     }
@@ -294,12 +271,9 @@
     // --- 动画循环 ---
     function animate() {
         requestAnimationFrame(animate);
-        // 背景颜色平滑过渡
         scene.background = scene.background || new THREE.Color();
         scene.background.lerp(targetBgColor, 0.05);
         scene.fog.color.copy(scene.background);
-        
-        // 粒子下落动画
         if (particleSystem) {
             const positions = particleSystem.geometry.attributes.position.array;
             for(let i=1; i<positions.length; i+=3) {
@@ -308,18 +282,16 @@
             }
             particleSystem.geometry.attributes.position.needsUpdate = true;
         }
+        if(currentModel) currentModel.rotation.y += 0.005; // 待机自转
         renderer.render(scene, camera);
     }
 
-    // --- 启动逻辑 ---
+    // --- 启动 ---
     const overlay = document.getElementById('overlay');
-    const statusText = document.getElementById('status-text');
-    
     initVision().then(() => {
-        statusText.innerText = "点击屏幕开启体验";
+        document.getElementById('status-text').innerText = "点击开启";
         overlay.addEventListener('click', () => {
-            overlay.style.display = 'none';
-            // 初始化首个场景
+            overlay.remove();
             updateScene(SOLAR_TERMS[0]);
             animate();
         });
